@@ -18,6 +18,14 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HJSSSRX/dsh-stock-advisor.git"
+  },
+  "homepage": "https://github.com/HJSSSRX/dsh-stock-advisor#readme",
+  "bugs": {
+    "url": "https://github.com/HJSSSRX/dsh-stock-advisor/issues"
+  },
   "scripts": {
     "doctor": "node scripts/doctor.mjs",
     "warm": "node scripts/stockctl.mjs warm",
