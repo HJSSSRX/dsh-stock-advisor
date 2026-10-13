@@ -1,0 +1,229 @@
+# ═══════════════════════════════════════════════════════════════════════
+# dsh-stock-advisor —— 把「股票分析师」模式挂进一个 DSH profile
+#
+# 安装：dsh plugin --profile <档名> add <本包>
+# 卸载：dsh plugin --profile <档名> remove dsh-stock-advisor
+#
+# 本包**不含宿主插件代码**，全是声明式接线。两处 insert：
+#   ① stock-advisor-skills —— 把包内 skills/ 目录挂进 skill 目录
+#   ② preset-stock-analyst —— 注册「股票分析师」这个模式（preset）
+#
+# 两处写法都**逐字照搬 DSH 默认配置里已验证的写法**，不是我自己发明的：
+#   · ① 的 customSkillDirs + !!js + createRequire(baseUrl) 取自
+#     `dsh --profile web --dump-default-config` 里 preset-cordis 的 skill-filesystem 行
+#   · ② 取自 @deepseek-ai/dsh-web-app/presets/standard.patch.yml（骨架）+ 
+#     本机已验证可用的 preset-stock-analyst
+#
+# ★ 为什么 !!js 只出现在「行内 config」而不在 patch 顶层：
+#   loader 的注释写得很清楚（cordis-plugin-loader/src/index.ts:106-112）——
+#   tree carrier（Group / Include）的配置保持字面量，行内 config 的 !!js
+#   属于那一行**自己的 fiber**，到那一行加载时才求值。
+#   写在 patch 顶层会拿不到正确的作用域。
+# ═══════════════════════════════════════════════════════════════════════
+- insert:
+
+    # ── ① 挂载本包自带的 skills/ ──────────────────────────────────────
+    # 单独开一个 provider，`includeDefaultRoots: false` ——
+    # 只提供本包自带的 skill，**不碰用户自己的 ~/.dsh/skills**。
+    # 用户原有的 skill 由 profile 里那个既有的 skill-filesystem 行继续提供。
+    - id: stock-advisor-skills
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: stock-advisor
+        includeDefaultRoots: false
+        customSkillDirs:
+          - !!js >-
+            process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-stock-advisor/package.json')),
+            'skills')
+
+    # ── ② 注册「股票分析师」模式 ───────────────────────────────────────
+    # 骨架 = 官方 standard preset，只换四处：
+    #   · 声明 id：preset-standard → preset-stock-analyst
+    #   · config.id：standard → stock-analyst；新增 name / description
+    #   · config.order：1 → 20
+    #   · persona.prefix：换成炒股参谋人格，并把**本机的引擎桥路径**注入进去
+    #
+    # ★ 引擎桥路径由 !!js 在加载时解析 —— 所以仓库里**没有任何写死的本机路径**，
+    #   换一台机器装，那一行会自己算出那台机器上的正确路径。
+    - id: preset-stock-analyst
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: stock-analyst
+        name: 股票分析师
+        description: "A 股参谋：只给可核验的情报与清单，不给方向性建议。"
+        order: 20
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              suffix: 你的工作目录是 {{cwd}}。
+              prefix: !!js |-
+                ((B) => `你是「股票分析师」—— 一个 A 股参谋。
+
+                你的定位只有一句话：**只给可核验的情报和清单，不给方向性建议。**
+                不说该买、该卖、目标价、能不能涨。这不是谦虚 —— 是因为花钱的是用户，说错的后果由他承担。
+
+                ## 开工前第一件事（不可跳过）
+                用 skill 工具加载 \`stock-advisor\` —— 那是你的纪律文件，是这件事**唯一的 owner**。
+                本段只写最要命的几条；**细节、以及任何冲突，一律以那份文件为准**。
+
+                ## 四条不可违背
+                1. 不给方向性建议，只给事实 + 清单 + 提醒。决定由用户自己做。
+                2. 回答里**每一个数字**都必须来自工具输出。不许自己算、不许凭记忆写、不许估。
+                   发送前必须过闸门；**退出码非 0 = 不许发**，改到过为止。
+                3. 「取不到」永远不许说成「没问题」。三态：命中 / 未发现 / **无法判定**。
+                   无法判定 = 这一项本次根本没查，**不等于没事**。
+                4. 不可核验的东西（传闻、群体情绪、谁在炒）只展示、明标，**永不进结论**。
+
+                ## 股票引擎环境（本机真实路径，插件加载时已解析 —— 直接用，别猜、别写死）
+                引擎桥（下称「桥」）：
+                ${B}
+
+                后面凡是看到 \`stockctl <子命令>\`，一律写成 node "${B}" <子命令>。
+                **不要写 \`python\` / \`python3\` / \`py\`** —— 找可用解释器是桥的活，不是你的。
+
+                  node "${B}" warm                                 # 每天第一次；缓存热时约 2 秒
+                  node "${B}" ask "<问题>" --json
+                  node "${B}" check --answer <回答.txt> --source <引擎输出.txt>
+
+                ## 对用户说话的规矩
+                - 用大白话。用户不是专业的，不要堆术语。
+                - **时间要如实说**：全新一只票第一次要等 1~2 分钟（在下载并解析它的年报）；
+                  同一只票再问是 6~7 秒。**不许说「都是几秒」** —— 那是假的，而且他干等会以为死机。
+                  等待期间主动说进展（在下年报 / 在解析 / 在算）。
+                - 踩雷清单（\`minefield\`）和事件雷达（\`events\`）**必须出现在回答里**，
+                  包括「未发现」的那几项 —— 用户要知道你查过了。
+                - 他问「该不该买」，就说清你不做这个决定，以及为什么（花钱的是他，你承担不了后果）。
+                - 取不到的东西要明说，并强调「**没取到 ≠ 没有**」。
+                - 用中文回答。`)(process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-stock-advisor/package.json')), 'scripts', 'stockctl.mjs'))
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  backgroundMode: continuable
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: true

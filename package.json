@@ -1,0 +1,44 @@
+{
+  "name": "dsh-stock-advisor",
+  "version": "0.1.0",
+  "description": "A 股参谋模式 for DeepSeek Harness：只给可核验的情报与清单，不给方向性建议。自带纪律文件、取数引擎、数字溯源闸门与安装体检。",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "stock",
+    "a-share",
+    "stock-advisor",
+    "financial-data",
+    "provenance"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "doctor": "node scripts/doctor.mjs",
+    "warm": "node scripts/stockctl.mjs warm",
+    "selftest": "node scripts/stockctl.mjs selftest",
+    "verify:paths": "node scripts/verify-paths.mjs"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "skills",
+    "engine",
+    "scripts",
+    "tools",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_LICENSES"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
