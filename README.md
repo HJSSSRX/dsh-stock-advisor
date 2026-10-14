@@ -48,6 +48,20 @@ dsh plugin --profile web add "git+https://github.com/HJSSSRX/dsh-stock-advisor.g
 
 > 把 `web` 换成你自己的 profile 名（`dsh plugin --profile <名字> ...`）。
 
+### ⚠️ 上面这条命令要 pnpm + git + 能连上 github.com
+
+三样缺任何一个都装不上。国内网络下最后一条尤其常见。
+
+**这种情况下走手动安装 —— 完全绕开包管理器和网络：**
+
+```bash
+node "<解压出来的目录>/tools/manual-install.mjs" --profile web
+```
+
+一条命令搞定，卸载也是 `--uninstall` 一条。
+原理、参数、以及**常见错误对照表**（含那个最容易踩的 YAML `[]` 坑）见
+[`MANUAL-INSTALL.md`](MANUAL-INSTALL.md)。
+
 ### 装完先体检（**这一步别跳**）
 
 ```bash
